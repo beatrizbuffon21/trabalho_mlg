@@ -1,0 +1,619 @@
+---
+title: "Análise Estatística de fatores socioeconômicos e geográficos associados à Mortalidade Infantil"
+author: "Arthur Henrique da Rocha Hintz e Beatriz Woos Buffon"
+date: "`r format(Sys.time(), '%d %b %Y')`"
+output:
+  html_document:
+    theme: cerulean
+    toc: yes
+    toc_float:
+      collapsed: yes
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+    keep_tex: true
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+```
+
+```{css, echo = FALSE}
+body {
+  text-align: justify;
+}
+```
+
+```{r, include=FALSE}
+library(tidyverse)
+library(fastDummies)
+library(hnp)
+library(car)
+library(kableExtra)
+library(skimr)
+library(gamlss.data)
+library(corrplot)
+library(rcompanion)
+```
+
+# Resumo
+
+O conjunto de dados InfMort é composto por 399 observações e 11
+variáveis que simulam uma análise de mortalidade infantil baseada em
+dados do estado do Paraná, Brasil, no ano de 2010. Esse banco de dados
+foi criado com o objetivo de demonstrar aplicações de variáveis-resposta
+binomiais em estudos de saúde pública. As variáveis incluem informações
+socioeconômicas, como índices de desenvolvimento, pobreza,
+analfabetismo, além de dados sobre saúde e geolocalização dos
+municípios. A análise deste conjunto permite explorar fatores que
+influenciam a mortalidade infantil para estudar relações entre variáveis
+e propor soluções para problemas sociais.
+
+# Introdução
+
+### Introdução
+
+A mortalidade infantil é um dos indicadores mais relevantes para avaliar
+as condições de saúde e desenvolvimento de uma população. No Brasil, as
+desigualdades regionais e socioeconômicas influenciam diretamente as
+taxas de mortalidade infantil, tornando este um problema complexo e
+multifacetado. Identificar os fatores associados a essas taxas é
+essencial para orientar políticas públicas que busquem a redução das
+desigualdades e a melhoria da qualidade de vida.
+
+O conjunto de dados InfMort foi desenvolvido para simular cenários que
+exploram as causas e os determinantes da mortalidade infantil, com base
+em informações de municípios do Paraná, Brasil, em 2010. A problemática
+central reside em entender como essas variáveis interagem para
+influenciar a mortalidade infantil. Por exemplo, regiões com maior
+pobreza e menor cobertura do Programa Saúde da Família podem apresentar
+taxas mais elevadas de mortalidade. Além disso, fatores como nível
+educacional e desenvolvimento econômico são potenciais determinantes a
+serem investigados. O objetivo desta análise é explorar essas relações,
+identificando os fatores mais relevantes e como eles afetam diretamente
+a mortalidade infantil. Espera-se que os resultados forneçam subsídios
+para intervenções mais eficazes no combate às desigualdades regionais e
+socioeconômicas, contribuindo para a melhoria da saúde infantil.
+
+# Dados
+
+O banco de dados, inicialmente, possui 399 observações e 11 variáveis,
+as quais podem ser descritas:
+
+1.  `x`: Localização Longitudinal da cidade;
+2.  `y`: Localização Latitudinal da cidade;
+3.  `dead`: Número de mortalidade infantil;
+4.  `bornalive`: Número de bebês nascidos vivos;
+5.  `IFDM` : Índice FIRJAN de desenvolvimento da cidade
+6.  `illit`: Índice de analfabetismo;
+7.  `lGDP` : Logaritmo do produto nacional bruto;
+8.  `cli` : Proporção de crianças que vivem num agregado familiar com
+    metade do salário mínimo;
+9.  `lpop` : Logaritmo do número de habitantes;
+10. `PSF` : Proporção abordado pelo Bolsa Família;
+11. `poor` : Proporção de indivíduos com baixa renda per capita.
+
+Algumas observações aleatórias do banco de dados podem ser visualizadas
+na tabela 1 a seguir:
+
+```{r}
+data("InfMort")
+dados <- InfMort
+
+set.seed(12)
+dados |> 
+  sample_n(5) |> 
+  kable()
+  #kable_styling(font_size = 12, full_width = FALSE)
+
+```
+
+# Análise Descritiva
+
+As análises dos dados referem-se a um processo crítico em relação as
+variáveis que influenciam na mortalidade infantil. Dessa forma, foi
+vericado medidas de tendência central, medidas de disperção e as
+relações entre as variáveis. Sendo assim, as variáveis são todas do tipo
+numéricas, não há valores faltantes nos dados e é possível verificar um
+outlier com 231 mortes em um local específico.
+
+```{r}
+skim(dados) |> 
+  dplyr::select(-complete_rate)
+```
+
+Os gráficos de dispersões é possível verificar a relação entre todas as
+covariáveis com a variável resposta
+
+```{r, dpi=250}
+covariaveis <- names(dados)[names(dados) != "dead"]
+
+# Transformar os dados para formato longo (tidy)
+dados_long <- dados |> 
+  filter(dead < 100) |> 
+  pivot_longer(cols = all_of(covariaveis), names_to = "Covariavel", values_to = "Valor")
+
+# Criar gráficos automaticamente
+graficos <- ggplot(dados_long, aes(x = Valor, y = dead)) +
+  geom_point(alpha = 0.6, color = "blue", size = 2) + # Ajustar estética
+  geom_smooth(method = "lm", se = FALSE, color = "red") + # Linha de tendência
+  facet_wrap(~ Covariavel, scales = "free_x") + # Dividir por covariáveis
+  labs(
+    title = "Relação entre Covariáveis e Mortalidade Infantil",
+    x = "Valores das Covariáveis",
+    y = "Número de Mortes"
+  ) +
+  theme_minimal(base_size = 14) + # Tema elegante
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    strip.text = element_text(face = "bold")
+  )
+
+print(graficos)
+
+```
+
+Interpretação das covariáveis exibidas:
+
+**`bornalive` (Número de nascidos vivos):** Existe uma relação positiva
+clara entre o número de nascidos vivos e a mortalidade infantil. Cidades
+com mais nascidos vivos apresentam mais mortes infantis. Isso é
+esperado, pois um maior número de nascimentos aumenta o risco absoluto
+de mortalidade infantil.
+
+**`cli` (Proporção de crianças em famílias de baixa renda):** Os pontos
+são dispersos, e a linha de tendência está quase horizontal, indicando
+ausência de relação clara. A proporção de crianças vivendo em famílias
+de baixa renda não parece influenciar diretamente o número de mortes
+infantis, pelo menos de forma linear.
+
+**`IFDM` (Índice FIRJAN de Desenvolvimento Municipal):** Existe uma
+relação ligeiramente positiva, sugerindo que municípios mais
+desenvolvidos (maior IFDM) têm mais mortes infantis. Cidades mais
+desenvolvidas podem apresentar maior mortalidade infantil absoluta. Isso
+pode ser explicado por fatores como: - Maior população e número absoluto
+de nascidos vivos, levando a mais mortes; - Melhor qualidade de
+registros nas cidades desenvolvidas, refletindo números mais precisos.
+
+**`illit` (Taxa de analfabetismo):** Existe uma relação **negativa
+clara**, com menos mortalidade infantil em cidades com menor
+analfabetismo. Altas taxas de analfabetismo estão associadas a maiores
+números de mortes infantis. Isso é consistente com o impacto negativo do
+baixo nível educacional sobre a saúde pública e a mortalidade infantil.
+
+**`lGDP` (Logaritmo do PIB per capita):** A relação é levemente
+positiva, indicando que cidades com maior PIB per capita apresentam mais
+mortes infantis. Essa relação também pode ser influenciada pelo tamanho
+populacional, já que municípios economicamente mais fortes tendem a ser
+mais populosos. Além disso, o PIB per capita pode refletir desigualdades
+internas que influenciam a mortalidade infantil.
+
+**`lpop` (Logaritmo do número de habitantes):** Existe uma relação
+positiva clara entre o tamanho da população e o número de mortes
+infantis. Cidades mais populosas têm mais mortes infantis em números
+absolutos, o que é esperado. Isso não significa necessariamente que a
+taxa de mortalidade infantil seja maior em cidades grandes, mas apenas
+que há mais mortes em termos absolutos devido ao maior número de
+nascidos vivos.
+
+**`poor` (Proporção de indivíduos com baixa renda per capita):** A
+relação é muito fraca e dispersa, mas com uma tendência ligeiramente
+positiva. Municípios com maior proporção de indivíduos de baixa renda
+podem ter uma leve associação com maior mortalidade infantil, mas a
+relação não é forte. Fatores socioeconômicos podem desempenhar um papel
+aqui, mas outras variáveis como saúde pública e educação podem
+interferir.
+
+**`PSF` (Cobertura pelo Programa Saúde da Família):** Existe uma relação
+negativa clara, indicando que uma maior cobertura do programa está
+associada a menor mortalidade infantil. O PSF parece cumprir seu papel
+na redução da mortalidade infantil. Municípios com maior cobertura do
+programa possuem melhores indicadores de saúde para crianças.
+
+**`x` e `y` (Coordenadas geográficas):** Não há uma relação clara entre
+a localização longitudinal (`x`) ou latitudinal (`y`) e o número de
+mortes infantis. A posição geográfica das cidades não parece ser um
+fator relevante para a mortalidade infantil, mas pode haver fatores
+regionais não capturados diretamente pelas coordenadas (ex.:
+características socioeconômicas ou culturais).
+
+```{r, dpi= 200}
+dados |> 
+  filter(dead < 100) |> 
+  mutate(Indice = row_number()) |> # Cria uma variável com o índice
+  ggplot(aes(x = Indice, y = dead)) +
+  geom_point(color = "#0073C2", size = 3, alpha = 0.7) + # Pontos com estética ajustada
+  labs(
+    title = "Dispersão da Mortalidade Infantil por Índice",
+    x = "Índice",
+    y = "Mortalidade Infantil"
+  ) +
+  theme_minimal(base_size = 14) +
+  theme(
+    plot.title = element_text(face = "bold", hjust = 0.5),
+    axis.title = element_text(face = "bold")
+  )
+```
+
+No gráfico de "Dispersão da Mortalidade Infantil por Índice" é possível
+verificar que muitos locais não apresentam mortalidade infantil, o que é
+evidente pela concentração de pontos na linha 0 do eixo vertical. Isso
+sugere que algumas localidades possuem boas condições de saúde, como
+acesso a serviços materno-infantis, programas sociais eficazes e
+melhores condições socioeconômicas. Além disso, pode estar relacionado a
+localidades com populações pequenas, onde o número absoluto de óbitos
+tende a ser menor. No entanto, o gráfico também destaca a existência de
+locais com mortalidade significativamente alta, evidenciando
+desigualdades que merecem uma análise mais detalhada.
+
+O gráfico de correlação entre as variáveis pode ser interpretado a
+partir do tamanho dos círculos e da cor. Quanto maior o círculo e mais
+escura é a cor mais forte é a correlação, também, se puxar mais para o
+azul é positiva, se for vermelha é negativa.
+
+```{r, dpi=200}
+corr_matrix <- cor(dados)
+
+corrplot(corr_matrix, method = "circle", type = "upper")
+```
+
+Com base na matriz de correlação apresentada e na descrição das
+variáveis, aqui está uma interpretação dos principais padrões que podem
+ser observados:
+
+1.  **Relação entre `dead` e `bornalive`**: Existe uma correlação
+    positiva forte entre o número de mortes infantis (`dead`) e o número
+    de bebês nascidos vivos (`bornalive`). Isso é esperado, pois onde há
+    mais nascimentos, também tende a haver mais óbitos infantis em
+    termos absolutos.
+
+2.  **Impacto do desenvolvimento (`IFDM`)**: `IFDM` apresenta
+    correlações negativas com variáveis como `illit` (índice de
+    analfabetismo) e `poor` (proporção de indivíduos com baixa renda per
+    capita). Isso faz sentido, pois um maior desenvolvimento está
+    associado a melhores condições educacionais e econômicas. Por outro
+    lado, `IFDM` possui correlações positivas com `lGDP` (logaritmo do
+    produto interno bruto) e `lpop` (logaritmo do número de habitantes),
+    indicando que cidades mais desenvolvidas tendem a ter economias
+    maiores e populações mais expressivas.
+
+3.  **Pobreza e condições de vida (`poor`, `cli`, `PSF`)**: Há uma
+    correlação positiva moderada a forte entre `poor` e `cli` (proporção
+    de crianças em famílias com baixa renda), indicando que essas
+    variáveis estão relacionadas com desigualdade social. `PSF`
+    (cobertura do Bolsa Família) apresenta correlações positivas com
+    indicadores de pobreza, como `poor` e `cli`. Isso reflete que o
+    programa está mais presente em regiões com maior vulnerabilidade.
+
+4.  **Educação e mortalidade infantil**: `illit` (índice de
+    analfabetismo) tem uma correlação positiva com `dead`, sugerindo que
+    taxas mais altas de analfabetismo podem estar associadas a maiores
+    níveis de mortalidade infantil. Além disso, `illit` se correlaciona
+    negativamente com `IFDM`, indicando que o analfabetismo tende a ser
+    menor em cidades mais desenvolvidas.
+
+5.  **Tamanho da população (`lpop`)**: `lpop` apresenta correlação
+    positiva com `lGDP`, indicando que cidades com populações maiores
+    tendem a ter economias mais robustas. No entanto, a relação de
+    `lpop` com indicadores sociais como `poor` e `cli` parece ser menos
+    evidente (possivelmente neutra ou fraca).
+
+6.  **Localização geográfica (`x`, `y`)**: As variáveis de localização
+    longitudinal (`x`) e latitudinal (`y`) apresentam correlações muito
+    fracas com as outras variáveis, sugerindo que o local geográfico
+    pode não ser diretamente relacionado aos indicadores analisados.
+
+# Ajuste dos Dados
+
+```{r}
+dados <- dados |> 
+  filter(dead < 100)
+
+dados <- dados[-52, ]
+
+```
+
+Foi removido o número de mortalidade igual a 231, pois distoava do resto
+dos dados e a observação 52 também se mostrou influente no modelo.
+
+# Modelo Ajustado
+
+A variável aleatória $Y$, representando a quantidade de mortes infantis,
+é assumida como seguindo uma Distribuição Binomial Negativa, a qual
+pertence à família exponencial canônica com parâmetro de dispersão. Essa
+escolha é apropriada dado que o espaço amostral de $Y$ é ${0,1,2,...,n}$
+e o parâmetro de média $\mu > 0$
+
+A função de ligação logarítmica, definida como $\eta = log(\mu)$, foi
+utilizada em função da natureza discreta e positiva dos dados, bem como
+do conjunto de valores possíveis da variável de interesse. Entre as
+covariáveis disponíveis no banco de dados, apenas quatro se mostraram
+significativas no modelo final. Assim, o modelo é expresso como: $$
+\eta = log(\mu) =  \sum_{j = 1}^{4} X_{ji}\beta_j.
+$$ Embora a distribuição de Poisson também tenha sido considerada, ela
+não apresentou um ajuste satisfatório aos dados, reforçando a escolha da
+Binomial Negativa para modelar os dados.
+
+A estimação do parâmetro $\mu$ foi realizada por meio da função `glm.nb`
+que emprega um processo iterativo até alcançar a convergência para o
+modelo ajustado. Assim, o modelo pode ser visualizado:
+
+```{r}
+fit1 <-  glm.nb(formula = dead ~ x + y + IFDM + lpop, 
+                data = dados, link = log)
+
+s_fit <- summary(fit1)
+
+coef_df <- as.data.frame(s_fit$coefficients)
+
+kable(coef_df)
+```
+
+```{r}
+
+coef <- fit1$coefficients
+
+m <- expression(mu)
+
+equation <- round(coef[1], 1)
+
+line_length <- 0
+max_length <- 80
+
+
+for (i in 2:length(coef)) {
+  
+  if(coef[i] > 0){
+    term <- paste(" + ", round(coef[i], 3), " X_{", (i-1), "}",sep = "")
+  } else {
+    term <- paste(" ", round(coef[i], 3), " X_{", (i-1), "}",sep = "")
+  }
+
+line_length <- line_length + nchar(term)
+  
+  if (line_length > max_length) {
+    equation <- paste0(equation, " \\\\ ", term)
+    line_length <- nchar(term)  
+  } else {
+    equation <- paste0(equation, term)
+  }
+}
+
+```
+
+O modelo pode ser escrito na forma:
+
+$\log(\hat{\mu})$ = $`r equation`$,
+
+em que:
+
+| $X_1$ = x, $x \in [-54.483, -48.367]$
+
+| $X_2$ = y, $x \in [ -26.472, -22.573]$
+
+| $X_3$ = IFDM, $x \in [0.550, 0.883]$
+
+| $X_4$ = lpop, $x \in [7.268, 13.144]$
+
+# Resultados
+
+As principais variáveis que estão associadas ao número de mortalidade
+infantil são as coordenadas da cidade, ao índice de desenvolvimento da
+cidade e a quantidade de habitantes.
+
+O AIC do modelo foi de `r round(fit1$aic, 3)`
+
+**Interpretação dos betas:**
+
+-   $\beta_1$, significa que a cada 1 grau da longitude da cidade,
+    aumenta `r exp(round(coef[2],1))` no número médio de óbitos, ou
+    seja, quanto mais para o leste do paraná, o número do mortalidade
+    infantil seja maior
+
+-   $\beta_2$, significa que a cada 1 grau da latitude da cidade,
+    aumenta `r exp(round(coef[3],1))` no número médio de óbitos, ou
+    seja, quanto mais para o norte do paraná, o número do mortalidade
+    infantil tende a aumentar.
+
+-   $\beta_3$, significa que quanto maior o IFDM da cidade, aumenta
+    `r exp(round(coef[4],1))` no número médio de óbitos.
+
+-   $\beta_4$, a cada 1 unidade no log da população aumenta em média
+    `r exp(round(coef[5],1))` no número de óbitos infantil da cidade.
+
+# Análise de Diagnóstico
+
+A análise de diagnóstico é uma etapa essencial na modelagem estatística
+para avaliar se o modelo ajustado é adequado para os dados. Isso envolve
+verificar se os pressupostos do modelo foram atendidos, se as variáveis
+escolhidas são relevantes e se há evidências de especificação incorreta
+ou outros problemas estruturais. No contexto apresentado, foram
+realizados testes específicos para validar o modelo.
+
+## Desvio
+
+```{r}
+n = dim(dados)[1] 
+
+# verificacao do ajuste do modelo
+D = deviance(fit1) 
+gl = n - fit1$rank 
+pvalor = 1-pchisq(D,gl) 
+```
+
+Devido p-valor igual `r pvalor` maior que um nível de significância de
+$\alpha = 5\%$, não há evidências estatísticas suficientes para rejeitar
+o modelo ajustado, ou seja, o modelo é adequado para os dados. O modelo
+nulo (apenas a constante, sem variáveis explicativas) teve um desvio de
+`r round(fit1$null.deviance,3)`. O modelo ajustado (com as variáveis
+explicativas) apresentou um desvio de `r round(fit1$deviance, 3)`. Essa
+redução substancial no desvio indica que o modelo ajustado conseguiu
+explicar grande parte da variabilidade dos dados, mostrando que as
+variáveis incluídas têm relevância no ajuste.
+
+## Teste Reset
+
+```{r}
+# # VERIFICACAO FUNCAO DE LIGACAO E OUTRAS POSSIVEIS INCORRETAS ESPECIFICACOES
+eta.hat2 <- fitted(fit1)^2
+verfify_link <-  fit1 <-  glm.nb(formula = dead ~ x + y + IFDM + lpop + eta.hat2, data = dados, 
+                init.theta = 20.40751514, link = log)
+ 
+pv <- summary(verfify_link)$coefficients["eta.hat2", "Pr(>|z|)"]
+```
+
+De acordo com o teste RESET, a função de ligação está adequada e outras
+especificações estão corretas, devido p-valor = `r round(pv,3)` $> 5\%$
+de significância.
+
+## Coeficiente de Determinação Generalizado
+
+```{r, include=T}
+a <- nagelkerke(fit1)
+
+b <- a$Pseudo.R.squared.for.model.vs.null
+kable(b)
+
+c <- b[3,]
+
+```
+
+O $R^2$ de Nagelkerke é dado por `r c`, ou seja, significa que
+`r round(c,1)`% da variabilidade da mortalidade infantil pode ser
+explicada pelas variáveis incluídas no modelo
+
+## Resíduos Deviance
+
+```{r}
+td = resid(fit1,type="deviance") 
+
+abline(plot(td), lty=c(2,2,3), h=c(-2,2,0))
+```
+
+A figura apresenta um gráfico de resíduos padronizados em função do
+índice das observações, utilizado para diagnosticar a adequação do
+modelo ajustado. Os resíduos estão distribuídos de forma aleatória ao
+longo do gráfico, sem apresentar um padrão ou tendência evidente. Isso é
+um indicativo de que o modelo está bem especificado e que as variáveis
+explicativas incluídas capturam bem a estrutura dos dados. A maioria dos
+resíduos está dentro do intervalo entre -2 e 2, que corresponde a 95% da
+probabilidade da distribuição normal padrão. Isso sugere que os resíduos
+seguem uma distribuição aproximadamente normal, como esperado em modelos
+bem ajustados. Alguns poucos resíduos ultrapassam o limite de ±2, mas
+isso não é incomum em conjuntos de dados reais.
+
+## Envelope Simulado
+
+```{r, results='hide'}
+hnp(fit1,half=F,resid.type="deviance", paint.out = T)
+```
+
+A maior parte dos pontos segue uma linha reta próxima da diagonal, o que
+indica que os resíduos estão aproximadamente normalmente distribuídos.
+Isso suporta a suposição de normalidade dos resíduos, essencial para
+modelos lineares. Pequenos desvios nos extremos podem ser investigados
+mais detalhadamente se forem relevantes para o objetivo do estudo. Este
+comportamento é comum em dados reais e não é necessariamente
+problemático, em que até 5% dos pontos podem estar fora dos limites
+(linhas tracejadas), o que é aceitável e esperado. Assim,o gráfico
+sugere uma boa adequação do modelo. A distribuição dos resíduos é
+consistente com a distribuição normal assumida, o que valida a escolha
+da distribuição para o modelo ajustado.
+
+## Alavancagem
+
+```{r}
+plot(hatvalues(fit1),ylab="Alavancagem")
+
+```
+
+A observação `r which(hatvalues(fit1) > 0.3)`, não apresentou ser um
+ponto influênte no modelo.
+
+## Distância de Cook
+
+```{r}
+plot(cooks.distance(fit1),ylab="Distancia de Cook")
+```
+
+Os pontos mais discrepantes identificados no gráfico da Distância de
+Cook foram analisados, e sua remoção não resultou em alterações
+significativas nos coeficientes da regressão.
+
+## DFFITS
+
+```{r}
+limite<-2*sqrt(fit1$rank / n)
+abline(plot(dffits(fit1),ylab="DFFITS"), 
+       col="red", h=c(-limite,limite),lty=2)
+```
+
+De acordo com o gráfico, nota-se que não tem nenhuma observação com
+impacto desproporcional no modelo ajustado.
+
+# Predição
+
+O gráfico a seguir mostra a relação entre os valores reais da quantidade
+de mortes, com os valores preditos a partir do modelo ajustado.
+
+```{r, dpi=200}
+preditos <- predict(fit1)
+
+dado_graf <- data.frame(
+  real = dados$dead,
+  predito = preditos
+)
+
+dado_graf$indice <- 1:nrow(dado_graf)
+
+ggplot(dado_graf, aes(x = indice)) +
+  geom_point(aes(y = real, color = "Reais")) +
+  geom_point(aes(y = predito, color = "Preditos")) +
+  scale_color_manual(values = c("Reais" = "#5fa8d3",
+                                "Preditos" = "#fb8500")) +
+  labs(x = "Índices", y = "Número de Óbitos",
+       color = "Legenda") +
+  theme_minimal()
+```
+
+## Conclusão
+
+A partir do modelo ajustado para a análise da mortalidade infantil,
+observou-se que as principais variáveis associadas ao número de óbitos
+infantis são as coordenadas geográficas da cidade, o índice de
+desenvolvimento da cidade (IFDM) e a quantidade de habitantes
+(log-população).
+
+Os coeficientes de regressão indicam que tanto a longitude quanto a
+latitude da cidade influenciam significativamente a mortalidade
+infantil, com um aumento observado à medida que as cidades se localizam
+mais para o leste e norte do Paraná. Além disso, a variável IFDM mostrou
+uma associação negativa com o número de óbitos, enquanto a população
+apresentou uma relação positiva, indicando que cidades com maior
+população têm, em média, mais mortes infantis.
+
+O AIC do modelo ajustado foi de 1357.007, e o valor de $R^2$ de
+Nagelkerke indicou que cerca de 77,09% da variabilidade da mortalidade
+infantil foi explicada pelas variáveis selecionadas, o que sugere um bom
+poder explicativo do modelo.
+
+A análise de diagnóstico mostrou que os resíduos estão distribuídos
+aleatoriamente e seguem uma distribuição aproximadamente normal, o que
+valida a adequação do modelo para os dados. Além disso, as análises de
+alavancagem e distância de Cook indicaram que não há pontos influentes
+que possam comprometer os resultados.
+
+O modelo mostrou-se robusto e bem ajustado, sendo capaz de explicar uma
+parte significativa da variabilidade observada nos dados. A análise de
+predição também indicou uma boa correspondência entre os valores reais e
+preditos, corroborando a qualidade do ajuste.
+
+Com isso, é possível concluir que o modelo proposto é adequado para
+entender os determinantes da mortalidade infantil no Paraná, com
+destaque para as variáveis geográficas e demográficas.
